@@ -1,0 +1,10 @@
+version: "3"
+
+services:
+
+  testcontainer:
+    image: ghcr.io/konstantin-umanets/testsgithubactions:pr-7
+    container_name: testcontainer
+    restart: unless-stopped
+    ports:
+      - '80:8080'
