@@ -1,4 +1,4 @@
-name: Deploy pre-built image to Docker
+name: Deploy pre-built image to Docker Machine
 defaults:
   run:
     shell: bash -ieo pipefail {0}
@@ -12,23 +12,27 @@ env:
 jobs:
   Build:
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     runs-on: ubuntu-latest
     steps:
-      - name: "Check out"
+      - name: "Check out repository"
         uses: actions/checkout@v4
 
-      - name: "Login to github docker registry"
-        run: echo ${{ secrets.PATTOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: install ssh keys
+      - name: "Create ssh key"
         run: |
-            install -m 600 -D /dev/null ~/.ssh/id_rsa
-            echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-            ssh-keyscan -H ${{ secrets.SSH_HOST }} > ~/.ssh/known_hosts
-      - name: connect and pull
-        run: ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cd ${{ secrets.WORK_DIR }} && docker-compose pull && docker-compose up -d && exit"
-      - name: cleanup
-        run: rm -rf ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" >> ./machine_connect.key
+          chmod 600 ./machine_connect.key
+
+      - name: "Docker compose down if exists"
+        run: ssh -o StrictHostKeyChecking=no -i ./machine_connect.key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} -p 22001 "cd ${{ secrets.WORK_DIR }} && docker-compose down && exit"
+
+      - name: "Copy new compose file"
+        run: scp -o StrictHostKeyChecking=no -i ./machine_connect.key -P 22001 ci/docker-compose.yaml ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.WORK_DIR }}
+
+      - name: "Connect and build with docker compose"
+        run: ssh -o StrictHostKeyChecking=no -i ./machine_connect.key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} -p 22001 "echo ${{ secrets.PATTOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin && cd ${{ secrets.WORK_DIR }} && docker-compose pull && docker-compose up -d && exit"
+
+      - name: "Cleanup"
+        run: rm machine_connect.key
